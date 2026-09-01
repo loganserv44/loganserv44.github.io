@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNL Faculty & Staff Salary Search</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b7280;
+    --border: #e2e2df;
+    --accent: #d00000;
+    --hover: #f0f0ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    padding: 6vh 16px 20vh;
+  }
+  main { width: 100%; max-width: 560px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; color: var(--muted); font-size: 0.9rem; }
+  .search-wrap { position: relative; }
+  #q {
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 1.05rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    color: var(--ink);
+    outline: none;
+  }
+  #q:focus { border-color: var(--accent); }
+  #list {
+    position: absolute;
+    left: 0; right: 0; top: calc(100% + 6px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  #list div {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  #list div:last-child { border-bottom: none; }
+  #list div:hover, #list div.active { background: var(--hover); }
+  #list .nm { font-weight: 600; }
+  #list .meta { font-size: 0.82rem; color: var(--muted); }
+  #card {
+    margin-top: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    display: none;
+  }
+  #card.show { display: block; }
+  #card .name { font-size: 1.25rem; font-weight: 700; margin-bottom: 2px; }
+  #card .title { color: var(--muted); margin-bottom: 18px; }
+  #card .salary { font-size: 2.1rem; font-weight: 700; color: var(--accent); }
+  #card .salary-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  #card .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-top: 18px; }
+  #card .grid div span { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  #status { margin-top: 16px; color: var(--muted); font-size: 0.9rem; }
+  footer { margin-top: 40px; font-size: 0.78rem; color: var(--muted); line-height: 1.6; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a; --card: #202024; --ink: #ececec; --muted: #9a9aa2;
+      --border: #34343a; --accent: #ff6b6b; --hover: #2a2a30;
+    }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>UNL Faculty &amp; Staff Salary Search</h1>
+  <p class="sub">Type a name to look up annual salary. Public University of Nebraska personnel data.</p>
+
+  <div class="search-wrap">
+    <input id="q" type="text" placeholder="Search a name (e.g. Smith, John)" autocomplete="off" spellcheck="false" disabled>
+    <div id="list" hidden></div>
+  </div>
+
+  <div id="status">Loading data&hellip;</div>
+
+  <div id="card">
+    <div class="name"></div>
+    <div class="title"></div>
+    <div class="salary-label">Annual salary</div>
+    <div class="salary"></div>
+    <div class="grid">
+      <div><span>Campus</span><b class="campus"></b></div>
+      <div><span>FTE</span><b class="fte"></b></div>
+      <div><span>Appointment</span><b class="term"></b></div>
+    </div>
+  </div>
+
+  <footer>
+    Salary figures are the budgeted annual amount at the listed FTE (a 0.500 FTE person works half-time for
+    half this figure). Academic-year appointments are paid over the 9-month school year; calendar-year over 12
+    months. Source: University of Nebraska public personnel records. This page only reflects that source file.
+  </footer>
+</main>
+
+<script>
+const q = document.getElementById('q');
+const list = document.getElementById('list');
+const status = document.getElementById('status');
+const card = document.getElementById('card');
+let DATA = [];
+let activeIdx = -1;
+
+const money = n => '$' + n.toLocaleString('en-US');
+const termLabel = t => {
+  if (t === '12') return 'Calendar year (12-month)';
+  if (t === '02') return 'Academic year (9-month)';
+  const n = parseInt(t, 10);
+  return n ? n + '-month' : '—';
+};
+
+fetch('data.json')
+  .then(r => r.json())
+  .then(rows => {
+    DATA = rows.map(r => ({ name: r[0], campus: r[1], title: r[2], salary: r[3], fte: r[4], term: r[5] }));
+    q.disabled = false;
+    status.textContent = DATA.length.toLocaleString() + ' records loaded. Start typing a name.';
+    q.focus();
+  })
+  .catch(() => { status.textContent = 'Could not load salary data.'; });
+
+function search(term) {
+  term = term.trim().toLowerCase();
+  if (term.length < 2) return [];
+  const starts = [], contains = [];
+  for (const p of DATA) {
+    const nl = p.name.toLowerCase();
+    if (nl.startsWith(term)) starts.push(p);
+    else if (nl.includes(term)) contains.push(p);
+    if (starts.length >= 30) break;
+  }
+  return starts.concat(contains).slice(0, 30);
+}
+
+function renderList(items) {
+  activeIdx = -1;
+  if (!items.length) { list.hidden = true; list.innerHTML = ''; return; }
+  list.innerHTML = items.map((p, i) =>
+    `<div data-i="${i}"><span class="nm"></span><span class="meta"></span></div>`
+  ).join('');
+  [...list.children].forEach((el, i) => {
+    el.querySelector('.nm').textContent = items[i].name;
+    el.querySelector('.meta').textContent = '  —  ' + items[i].title + ', ' + items[i].campus;
+  });
+  list._items = items;
+  list.hidden = false;
+}
+
+function pick(p) {
+  q.value = p.name;
+  list.hidden = true;
+  card.querySelector('.name').textContent = p.name;
+  card.querySelector('.title').textContent = p.title;
+  card.querySelector('.salary').textContent = money(p.salary);
+  card.querySelector('.campus').textContent = p.campus;
+  card.querySelector('.fte').textContent = p.fte;
+  card.querySelector('.term').textContent = termLabel(p.term);
+  card.classList.add('show');
+  status.textContent = '';
+}
+
+q.addEventListener('input', () => {
+  card.classList.remove('show');
+  renderList(search(q.value));
+});
+
+q.addEventListener('keydown', e => {
+  if (list.hidden) return;
+  const n = list.children.length;
+  if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % n; }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + n) % n; }
+  else if (e.key === 'Enter') { e.preventDefault(); if (activeIdx >= 0) pick(list._items[activeIdx]); else if (n) pick(list._items[0]); return; }
+  else if (e.key === 'Escape') { list.hidden = true; return; }
+  else return;
+  [...list.children].forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+  if (activeIdx >= 0) list.children[activeIdx].scrollIntoView({ block: 'nearest' });
+});
+
+list.addEventListener('click', e => {
+  const div = e.target.closest('div[data-i]');
+  if (div) pick(list._items[+div.dataset.i]);
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) list.hidden = true;
+});
+</script>
+</body>
+</html>
