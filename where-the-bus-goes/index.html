@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where can the bus get you? — StarTran access in Lincoln, Nebraska</title>
+<meta name="description" content="How far the bus actually gets you from six points in Lincoln, Nebraska, hour by hour — and how far it doesn't, after dark and on weekends.">
+<meta name="author" content="Logan Servant">
+<link rel="canonical" href="https://loganserv44.github.io/where-the-bus-goes/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Where can the bus get you in an hour?">
+<meta property="og:description" content="Scheduled StarTran access in Lincoln, Nebraska, mapped hour by hour. At 8am, downtown reaches 41% of the city. At 8pm, 9%. On Sunday, nothing.">
+<meta property="og:url" content="https://loganserv44.github.io/where-the-bus-goes/">
+<meta property="og:image" content="https://loganserv44.github.io/where-the-bus-goes/downtown.webp">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --hairline: #e1e0d9; --accent: #1c5cab; --bar: #9ec5f4;
+  }
+  * { box-sizing: border-box; }
+  /* Deliberately no `scroll-behavior: smooth` here. It would also govern calls that
+     pass behavior:"auto", and some embedded browsers accept a smooth scroll and then
+     never perform it -- which would take the reliable path down with it. Scrolling is
+     handled in goTo() instead, which checks that it happened. */
+  body { margin: 0; background: var(--surface); color: var(--ink);
+         font: 16px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: clamp(24px, 4vw, 32px); line-height: 1.2; margin: 0 0 10px; }
+  .lede { color: var(--ink2); margin: 0 0 26px; max-width: 68ch; }
+  .row { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .group h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+              color: var(--muted); margin: 0; font-weight: 600; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; font-size: 14px; padding: 8px 14px; cursor: pointer;
+           background: #fff; color: var(--ink2); border: 1px solid var(--hairline);
+           border-radius: 999px; }
+  button:hover { border-color: var(--muted); color: var(--ink); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+                                color: #fff; }
+  .controls { padding: 16px 0 18px; border-top: 1px solid var(--hairline);
+              border-bottom: 1px solid var(--hairline); margin-bottom: 20px; }
+  .timeline { margin: 22px 0 6px; }
+  .tlhead { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
+  .tlhead h2 { margin: 0; }
+  /* pan-y, not none: a vertical swipe over the bars still scrolls the page, while
+     horizontal movement is ours to scrub with. */
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 62px;
+          touch-action: pan-y; }
+  .bars button { flex: 1 1 0; padding: 0; border: 0; border-radius: 3px 3px 0 0;
+                 background: var(--bar); min-width: 0; cursor: ew-resize; }
+  .bars button[aria-pressed="true"] { background: var(--accent); }
+  .bars button:hover { outline: 2px solid var(--muted); outline-offset: 1px; }
+  .ticks { display: flex; justify-content: space-between; color: var(--muted);
+           font-size: 12px; margin-top: 6px; }
+  button.play { margin-left: auto; font-size: 13px; padding: 5px 13px; min-width: 88px;
+                white-space: nowrap; flex: 0 0 auto; }
+  button.play[aria-pressed="true"] { background: var(--accent); border-color: var(--accent);
+                                     color: #fff; }
+
+  .readout { display: flex; flex-wrap: wrap; gap: 4px 28px; align-items: flex-end;
+             margin: 22px 0 12px; }
+  .eyebrow { margin: 0; color: var(--ink2); font-size: 15px; }
+  .statnum { margin: 2px 0 0; font-size: clamp(38px, 7vw, 56px); line-height: 1;
+             font-weight: 700; color: var(--accent); letter-spacing: -.02em; }
+  .statsub { margin: 4px 0 0; color: var(--ink2); font-size: 15px; }
+  .compare { margin: 0 0 4px; color: var(--ink2); font-size: 15px; max-width: 30ch; }
+  .compare b { color: var(--ink); font-weight: 700; }
+  button.share { font-size: 13px; padding: 6px 12px; margin: 0 0 4px auto; }
+  .shareurl { width: 100%; font: inherit; font-size: 13px; padding: 6px 8px;
+              margin: 0 0 12px; color: var(--ink2); background: #fff;
+              border: 1px solid var(--hairline); border-radius: 6px; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; display: block; background: #fff;
+               border: 1px solid var(--hairline); transition: opacity .12s ease; }
+  /* Only seen when a map isn't in cache yet: the previous one stays up, dimmed, so a
+     slow load reads as "working" rather than as a broken image. */
+  figure.loading img { opacity: .45; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0 0;
+            color: var(--ink2); font-size: 14px; }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .sw { width: 26px; height: 12px; border-radius: 2px; }
+  .findings { margin: 44px 0 0; }
+  .findings > h2 { font-size: 22px; margin: 0 0 4px; }
+  .findings article { padding: 20px 0; border-top: 1px solid var(--hairline); }
+  .findings h3 { font-size: 18px; line-height: 1.35; margin: 0 0 8px; max-width: 46ch; }
+  .findings p { margin: 0; max-width: 62ch; color: var(--ink2); }
+  .findings .fact { color: var(--ink); font-weight: 600; margin-bottom: 8px; }
+  .findings .fact b { color: var(--accent); }
+  .findings a { color: var(--accent); text-decoration-thickness: 1px;
+                text-underline-offset: 2px; }
+  .aside article { border-top: 1px dashed var(--hairline); }
+  .aside h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+              color: var(--muted); font-weight: 600; }
+  .panels { margin: 48px 0 0; padding-top: 12px; border-top: 2px solid var(--ink); }
+  .panels > h2 { font-size: 22px; margin: 14px 0 8px; }
+  .panels > .lede { margin-bottom: 26px; }
+  .panel { margin: 0 0 34px; }
+  .panel img { width: 100%; height: auto; display: block; background: #fff;
+               border: 1px solid var(--hairline); }
+  .panel figcaption { margin-top: 10px; color: var(--ink2); font-size: 15px;
+                      max-width: 62ch; }
+  .panel figcaption b { color: var(--ink); }
+  footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--hairline);
+           color: var(--muted); font-size: 13px; }
+  footer a { color: var(--ink2); }
+  kbd { font: inherit; font-size: 12px; background: #fff; border: 1px solid var(--hairline);
+        border-radius: 4px; padding: 1px 5px; }
+  @media (max-width: 620px) { .bars { height: 48px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Where can the bus get you in an hour?</h1>
+  <p class="lede">Pick a place and an hour. Shaded areas are everywhere you could reach
+  within an hour on the StarTran bus, including the walk at each end and the wait in
+  between. The map never moves, so anything that changes is the bus service changing —
+  not the view.</p>
+
+  <div class="controls">
+    <div class="row">
+      <div class="group">
+        <h2>Starting point</h2>
+        <div class="btns" id="origins"></div>
+      </div>
+      <div class="group">
+        <h2>Day</h2>
+        <div class="btns" id="days"></div>
+      </div>
+    </div>
+
+    <div class="timeline" id="timeline">
+      <div class="tlhead">
+        <h2 style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600">
+          Leaving at — each bar is the area reachable that hour</h2>
+        <button type="button" class="play" id="play" aria-pressed="false">▶ Play day</button>
+      </div>
+      <div class="bars" id="bars" role="group" aria-label="Departure hour"></div>
+      <div class="ticks"><span id="tickStart"></span><span id="tickEnd"></span></div>
+    </div>
+  </div>
+
+  <div class="readout">
+    <div class="stat">
+      <p class="eyebrow" id="when"></p>
+      <p class="statnum" id="area"></p>
+      <p class="statsub" id="note">reachable within an hour</p>
+    </div>
+    <p class="compare" id="compare"></p>
+    <button type="button" class="share" id="share">Copy link to this map</button>
+  </div>
+  <input class="shareurl" id="shareUrl" readonly hidden aria-label="Link to this map">
+
+  <figure id="fig">
+    <img id="map" alt="" width="1200" height="1200" fetchpriority="high" decoding="async">
+  </figure>
+
+  <div class="legend" id="legend"></div>
+
+  <!-- Findings. Every figure below is either in methodology.md or in data.json, and the
+       areas are written exactly as the explorer prints them, so a reader who follows a
+       link sees the same number they just read. Do not edit a number here without
+       re-checking it against the run that produced the maps. -->
+  <section class="findings">
+    <h2>Seven things the maps turned up</h2>
+
+    <article>
+      <h3>“Service runs until 9:50pm” is true and useless.</h3>
+      <p class="fact">8 of 18 routes still run after 9pm. After 9:30pm, <b>3</b>.</p>
+      <p>That figure is the last bus <em>anywhere on the system</em>, not anything a rider
+      can plan around. Downtown — the best-served stop in Lincoln — reaches
+      <a href="#downtown/wk/21">0.8 sq mi at 9pm</a>.</p>
+    </article>
+
+    <article>
+      <h3>By 8pm, two of these stops have no bus at all.</h3>
+      <p class="fact">Bryan East and Briarpark both read 0.5 sq mi.</p>
+      <p>That is about sixty grid cells, which is what a ten-minute walk covers. The map
+      isn’t showing you a smaller bus network — it’s showing you
+      <a href="#bryan-east/wk/20">walking</a>. The last bus left Bryan East at 7:46pm and
+      Briarpark at 6:26pm.</p>
+    </article>
+
+    <article>
+      <h3>The worst time to catch a bus is the middle of the day.</h3>
+      <p class="fact">Bryan East: 29 sq mi at 7am, <b>19 at 10am</b>, 34 at 3pm.</p>
+      <p>Every origin does this — a dip from about 9am to 1pm that sits below the early
+      morning, then a peak at <a href="#bryan-east/wk/15">2–3pm</a>. Dawn beats midday.</p>
+    </article>
+
+    <article>
+      <h3>Two maps are pixel-for-pixel identical, and that’s correct.</h3>
+      <p class="fact"><a href="#s40th-briarpark/wk/8">Briarpark, weekday 8am</a> and
+      <a href="#s40th-briarpark/sa/17">Briarpark, Saturday 5pm</a>: 4.2 sq mi each.</p>
+      <p>Not similar — the same file, byte for byte. Route 56 is the only service there,
+      and it runs hourly on both days. A 60-minute departure window over hourly service
+      samples every possible wait — 0 through 59 minutes — exactly once, so the median
+      can’t tell the two days apart. It looks like a bug and it’s a proof.</p>
+    </article>
+
+    <article>
+      <h3>Saturday doesn’t taper off. It stops.</h3>
+      <p class="fact">N 27th &amp; Superior: 13 sq mi at 4pm, 8.6 at 5pm,
+      <a href="#n27th-superior/sa/19">0.3 at 7pm</a>.</p>
+      <p>Saturday holds one flat level all day rather than building to a peak, and then
+      falls off a cliff inside three hours.</p>
+    </article>
+
+    <article>
+      <h3>The schedule file claims 16 months and knows about one holiday.</h3>
+      <p class="fact">Labor Day 2026. That’s the only exception in the feed.</p>
+      <p>It declares itself valid through the end of 2027, yet Thanksgiving, Christmas and
+      the 4th of July are simply absent. Either StarTran runs an ordinary weekday on
+      Christmas, or the feed only carries near-term exceptions — and nothing in the data
+      says which.</p>
+    </article>
+
+    <article>
+      <h3>A map can show you service that isn’t there.</h3>
+      <p class="fact">No bus stops at UNL East Campus on a Saturday. Its Saturday map
+      still shades <a href="#fig-unl-east-campus">10.5 sq mi</a>.</p>
+      <p>Zero Saturday departures — routes 24 and 25 are weekday-only — and yet the panel
+      is far from empty, because you can walk to stops that other routes still serve. The
+      shading is real. It just isn’t what it looks like.</p>
+    </article>
+  </section>
+
+  <section class="findings aside">
+    <article>
+      <h3>One I can’t explain</h3>
+      <p>I don’t know why the middle of the day is the worst time to travel. My guess is
+      school-day service — StarTran runs it, and the afternoon peak lines up with a school
+      letting out — but I haven’t checked that against the route timetables, so I’m not
+      going to claim it.</p>
+    </article>
+
+    <article>
+      <h3>One I got wrong</h3>
+      <p>My first check of the routing network added up the legs of each trip. That made a
+      two-bus ride to the Nebraska Union look like 8 minutes, and the check “failed.” The
+      time spent standing at the origin before the first bus belongs to no leg, so it was
+      being dropped. The network was right; my measurement was wrong. Every trip is now
+      timed door to door, from when you leave to when you arrive.</p>
+    </article>
+  </section>
+
+  <!-- The six comparison figures. Captions are each origin's reason for being chosen,
+       from data/origins.csv, converted to US units to match the rest of the page. -->
+  <section class="panels">
+    <h2>The six origins, side by side</h2>
+    <p class="lede">Each figure holds one origin across four departure times — weekday
+    8am and 8pm, Saturday 5pm, Sunday noon — drawn at one shared scale, so the change
+    across a week is a matter of looking rather than arithmetic. The Sunday panel is blank
+    because no StarTran bus runs on a Sunday.</p>
+
+    <figure class="panel" id="fig-downtown">
+      <img src="downtown.webp" alt="Four maps of the area reachable from Downtown (11th and P) at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>Downtown (11th &amp; P).</b> Best case: 315 weekday trips, the most
+      of any stop in Lincoln. Last bus 9:48pm. Stands in for UNL City Campus, 0.6 miles
+      away.</figcaption>
+    </figure>
+
+    <figure class="panel" id="fig-unl-east-campus">
+      <img src="unl-east-campus.webp" alt="Four maps of the area reachable from UNL East Campus at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>UNL East Campus.</b> The student’s stop: 302 weekday trips and none
+      at all on Saturday, because routes 24 and 25 are weekday-only.</figcaption>
+    </figure>
+
+    <figure class="panel" id="fig-bryan-east">
+      <img src="bryan-east.webp" alt="Four maps of the area reachable from Bryan Health East Campus at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>Bryan Health East Campus (48th &amp; A).</b> The shift worker’s stop.
+      The last weekday bus leaves at 7:46pm, which is before a lot of shifts end.</figcaption>
+    </figure>
+
+    <figure class="panel" id="fig-n27th-superior">
+      <img src="n27th-superior.webp" alt="Four maps of the area reachable from North 27th and Superior at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>N 27th &amp; Superior.</b> Suburban housing and groceries: 88
+      apartment buildings and 3 supermarkets within half a mile.</figcaption>
+    </figure>
+
+    <figure class="panel" id="fig-48th-r-target">
+      <img src="48th-r-target.webp" alt="Four maps of the area reachable from 48th and R at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>48th &amp; R (Target).</b> Groceries: 4 supermarkets within half a
+      mile, served by route 44 and its 30 weekday trips.</figcaption>
+    </figure>
+
+    <figure class="panel" id="fig-s40th-briarpark">
+      <img src="s40th-briarpark.webp" alt="Four maps of the area reachable from South 40th and Briarpark at weekday 8am, weekday 8pm, Saturday 5pm and Sunday noon." loading="lazy" width="2400" height="3220">
+      <figcaption><b>S 40th &amp; Briarpark.</b> Worst case with service at all: the south
+      edge, route 56 only, 13 weekday trips, last bus 6:26pm.</figcaption>
+    </figure>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function () {
+  const D = window.EXPLORER_DATA;
+  if (!D) {
+    document.getElementById("footer").textContent =
+      "Could not load data.js — it must sit next to this page.";
+    return;
+  }
+
+  const hoursFor = (day) => D.panels
+    .filter((p) => p.day === day && p.origin === state.origin)
+    .sort((a, b) => a.hour - b.hour);
+
+  const state = { origin: D.origins[0].slug, day: D.days[0].id, hour: null };
+
+  // Permalinks. The URL fragment carries origin/day/hour (#bryan-east/wk/20) so one
+  // specific map can be linked to. A stale or hand-edited fragment degrades instead of
+  // failing: an unknown origin or day is ignored, and render() already snaps an hour the
+  // chosen day doesn't have back to that day's first.
+  const key = () => `${state.origin}/${state.day}/${state.hour}`;
+
+  function applyHash() {
+    const [origin, day, hour] = decodeURIComponent(location.hash.slice(1)).split("/");
+    if (D.origins.some((o) => o.slug === origin)) state.origin = origin;
+    if (D.days.some((d) => d.id === day)) state.day = day;
+    const h = parseInt(hour, 10);
+    state.hour = Number.isInteger(h) ? h : null;
+  }
+
+  function writeHash() {
+    if (location.hash === "#" + key()) return;
+    try {
+      // replaceState, not pushState: arrowing through sixteen hours shouldn't leave
+      // sixteen entries for the back button to walk back out through.
+      history.replaceState(null, "", "#" + key());
+    } catch {
+      // Chrome blocks the History API on file:// pages, and this one is meant to open
+      // from disk. Assigning the hash works everywhere; it fires hashchange, which the
+      // listener below ignores because the state already matches.
+      location.hash = key();
+    }
+  }
+
+  function mkButton(parent, label, onClick, title) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (title) b.title = title;
+    b.addEventListener("click", onClick);
+    parent.appendChild(b);
+    return b;
+  }
+
+  const originBtns = new Map();
+  for (const o of D.origins) {
+    originBtns.set(o.slug, mkButton(document.getElementById("origins"), o.name, () => {
+      state.origin = o.slug;
+      render();
+    }));
+  }
+  const dayBtns = new Map();
+  for (const d of D.days) {
+    dayBtns.set(d.id, mkButton(document.getElementById("days"), d.label, () => {
+      state.day = d.id;
+      state.hour = null;
+      render();
+    }));
+  }
+
+  document.getElementById("legend").innerHTML = D.bands
+    .map((b) => `<span><i class="sw" style="background:${b.color}"></i>${b.label}</span>`)
+    .join("");
+
+  document.getElementById("footer").innerHTML =
+    `Scheduled StarTran service, feed ${D.feed_version} — not real-time performance. ` +
+    `Travel times are the median across a ${D.window_minutes}-minute departure window, ` +
+    `so they include a typical wait. Walking ${D.walking_mph} mph, up to a ` +
+    `${D.max_walk_minutes}-minute walk to and from stops. Gaps inside a shaded area are ` +
+    `places too far from any stop to walk to. Map data © OpenStreetMap contributors. ` +
+    `<br>Drag across the bars to scrub through the day, or use <kbd>←</kbd> <kbd>→</kbd>. ` +
+    `<a href="https://github.com/loganserv44/WhereCanTheBusGetMe">Method and code</a>.`;
+
+  const barsEl = document.getElementById("bars");
+  const imgEl = document.getElementById("map");
+  const figEl = document.getElementById("fig");
+
+  // Preloading runs one file at a time and at low priority. Firing a whole day at once
+  // was actively harmful: a browser opens about six connections per host over HTTP/1.1,
+  // so a burst of preloads sits in front of the map the reader is waiting for, and the
+  // page falls back to alt text until the queue drains.
+  const queued = new Set();
+  const queue = [];
+  let pumping = false;
+
+  function preload(list) {
+    for (const p of list) {
+      if (!p || queued.has(p.image)) continue;
+      queued.add(p.image);
+      queue.push(p.image);
+    }
+    if (!pumping) pump();
+  }
+
+  function pump() {
+    const src = queue.shift();
+    if (!src) { pumping = false; return; }
+    pumping = true;
+    const img = new Image();
+    img.fetchPriority = "low";
+    img.onload = img.onerror = pump;
+    img.src = src;
+  }
+
+  // Swapping the src directly leaves the figure empty while the new file loads, which is
+  // what produced a blank map with alt text. Decode the next one off-screen and only then
+  // put it in place, so the previous map stays up until its replacement is ready. The
+  // token guards against a slow load landing after a faster, later one.
+  let swapToken = 0;
+  let idleTimer = null;
+
+  function showMap(panel, alt) {
+    const token = ++swapToken;
+    const next = new Image();
+    next.fetchPriority = "high";
+    next.src = panel.image;
+    queued.add(panel.image);
+
+    const apply = () => {
+      if (token !== swapToken) return;   // a later switch already won
+      imgEl.src = next.src;
+      imgEl.alt = alt;
+      figEl.classList.remove("loading");
+    };
+
+    if (next.complete) { apply(); return; }   // already cached: swap with no flicker
+    figEl.classList.add("loading");
+    // decode() rejects on a broken file; apply anyway, so a genuinely missing image
+    // shows its alt text instead of leaving a stale map up forever.
+    (next.decode ? next.decode() : Promise.resolve()).then(apply, apply);
+  }
+
+  // Panel labels read "Weekday 8am". Inside a chosen day that prefix is noise -- the
+  // day is already a pressed button -- so ticks and comparisons use the hour alone.
+  const hourOnly = (p) =>
+    p.day_label && p.label.startsWith(p.day_label)
+      ? p.label.slice(p.day_label.length + 1) : p.label;
+
+  // An area on its own is a number with no scale. Measuring it against the day's best
+  // hour is what makes it mean something: 12 sq mi reads very differently once you know
+  // the same stop reaches 43 at its peak.
+  function compareText(current, peak, hours) {
+    if (!current.routed || !current.km2) {
+      return hours.length === 1
+        ? "StarTran runs no Sunday service, so none of this map is reachable."
+        : "No bus leaves this stop in this hour.";
+    }
+    if (current === peak) return "The best this stop manages all day.";
+    const pct = Math.round((1 - current.km2 / peak.km2) * 100);
+    if (pct < 1) return `Effectively the same as the ${hourOnly(peak)} peak.`;
+    return `<b>${pct}% smaller</b> than the same stop at ${hourOnly(peak)}, ` +
+           `which reaches ${peak.area}.`;
+  }
+
+  function render() {
+    const hours = hoursFor(state.day);
+    if (!hours.length) return;
+    if (state.hour === null || !hours.some((p) => p.hour === state.hour)) {
+      state.hour = hours[0].hour;
+    }
+    const current = hours.find((p) => p.hour === state.hour);
+    const peak = hours.reduce((a, b) => ((b.km2 || 0) > (a.km2 || 0) ? b : a));
+    const peakKm2 = peak.km2 || 1;
+    // A day with a single entry (Sunday: no service) has no shape to step through and
+    // nothing to play.
+    document.getElementById("timeline").hidden = hours.length === 1;
+
+    barsEl.innerHTML = "";
+    for (const p of hours) {
+      const b = mkButton(barsEl, "",
+                         () => { stopPlay(); state.hour = p.hour; render(); },
+                         `${hourOnly(p)}: ${p.area || "no buses"}`);
+      b.style.height = Math.max(4, Math.round(((p.km2 || 0) / peakKm2) * 100)) + "%";
+      b.setAttribute("aria-pressed", String(p.hour === state.hour));
+      b.setAttribute("aria-label", `${p.label}, ${p.area || "no buses"}`);
+    }
+    document.getElementById("tickStart").textContent = hourOnly(hours[0]);
+    document.getElementById("tickEnd").textContent = hourOnly(hours[hours.length - 1]);
+
+    document.getElementById("when").textContent = current.label;
+    document.getElementById("area").textContent = current.area || "Nowhere";
+    document.getElementById("note").textContent =
+      current.routed ? "reachable within an hour" : "no buses run";
+    document.getElementById("compare").innerHTML = compareText(current, peak, hours);
+
+    showMap(current, `Map of the area reachable from ` +
+      `${D.origins.find((o) => o.slug === state.origin).name} leaving at ` +
+      `${current.label}: ${current.area || "nowhere"}`);
+
+    for (const [slug, b] of originBtns) b.setAttribute("aria-pressed", String(slug === state.origin));
+    for (const [id, b] of dayBtns) b.setAttribute("aria-pressed", String(id === state.day));
+
+    const i = hours.findIndex((p) => p.hour === state.hour);
+    preload([hours[i + 1], hours[i - 1]]);
+    // Then quietly fetch the rest of this day, so stepping or playing through it later
+    // costs nothing. Queued behind the neighbours above and fetched one at a time.
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => preload(hours), 900);
+
+    writeHash();
+    // If the copy fallback is open, it must keep showing a link to what's on screen.
+    if (!shareUrl.hidden) shareUrl.value = location.href;
+  }
+
+  // Playback. The argument of this page is that service builds up and then collapses
+  // over a day; playing it makes that argument in about ten seconds without the reader
+  // clicking anything. One pass, no loop -- the point is where the day ends up.
+  const playBtn = document.getElementById("play");
+  const PLAY_LABEL = playBtn.textContent;
+  const PLAY_MS = 600;
+  let playTimer = null;
+
+  function stopPlay() {
+    clearInterval(playTimer);
+    playTimer = null;
+    playBtn.textContent = PLAY_LABEL;
+    playBtn.setAttribute("aria-pressed", "false");
+  }
+
+  function startPlay() {
+    const hours = hoursFor(state.day);
+    if (hours.length < 2) return;
+    preload(hours);   // the whole day at once, so playback doesn't stutter on a swap
+    // Pressing play while parked on the last hour should replay the day, not sit still.
+    if (state.hour === hours[hours.length - 1].hour) state.hour = hours[0].hour;
+    playBtn.textContent = "❚❚ Pause";
+    playBtn.setAttribute("aria-pressed", "true");
+    render();
+    playTimer = setInterval(() => {
+      // Re-read the list each tick: switching origin or day mid-play is allowed, and
+      // playback should follow to the new one rather than run off the end of the old.
+      const list = hoursFor(state.day);
+      const i = list.findIndex((p) => p.hour === state.hour);
+      if (i >= list.length - 1) { stopPlay(); return; }
+      state.hour = list[i + 1].hour;
+      render();
+    }, PLAY_MS);
+  }
+
+  playBtn.addEventListener("click", () => (playTimer ? stopPlay() : startPlay()));
+
+  // Scrubbing. The bars stay bars rather than becoming a slider, because each one's
+  // height is that hour's reachable area -- the timeline is a chart as much as a
+  // control, and a slider would throw that away. Dragging across them gives the
+  // slider's feel without losing the shape of the day.
+  function scrubTo(clientX) {
+    const hours = hoursFor(state.day);
+    if (hours.length < 2) return;
+    const r = barsEl.getBoundingClientRect();
+    const i = Math.max(0, Math.min(hours.length - 1,
+                                   Math.floor((clientX - r.left) / r.width * hours.length)));
+    if (hours[i].hour === state.hour) return;  // only redraw when the hour actually changes
+    state.hour = hours[i].hour;
+    render();
+  }
+
+  barsEl.addEventListener("pointerdown", (e) => {
+    stopPlay();
+    // Capture on the container, not the bar: render() replaces the bars underneath the
+    // pointer on every step, and a capture held by one of them would die with it.
+    barsEl.setPointerCapture(e.pointerId);
+    scrubTo(e.clientX);
+    e.preventDefault();  // no text selection while dragging
+  });
+  barsEl.addEventListener("pointermove", (e) => {
+    if (barsEl.hasPointerCapture(e.pointerId)) scrubTo(e.clientX);
+  });
+
+  const shareBtn = document.getElementById("share");
+  const shareUrl = document.getElementById("shareUrl");
+  const SHARE_LABEL = shareBtn.textContent;
+  let shareTimer = null;
+
+  shareBtn.addEventListener("click", async () => {
+    const say = (msg) => {
+      shareBtn.textContent = msg;
+      clearTimeout(shareTimer);
+      shareTimer = setTimeout(() => { shareBtn.textContent = SHARE_LABEL; }, 2500);
+    };
+    try {
+      await navigator.clipboard.writeText(location.href);
+      shareUrl.hidden = true;
+      say("Link copied");
+    } catch {
+      // The clipboard API needs a secure context, which file:// is not. Show the URL
+      // selected instead, so Ctrl+C still does the job.
+      shareUrl.hidden = false;
+      shareUrl.value = location.href;
+      shareUrl.select();
+      say("Press Ctrl+C");
+    }
+  });
+
+  // A finding's link sets the explorer to the map that proves it. The hashchange
+  // listener below already applies the state; this only brings the map back into view,
+  // because by the time a reader clicks one they are well below it. Scrolling to the
+  // readout rather than the figure keeps the number and the map on screen together.
+  const readoutEl = document.querySelector(".readout");
+  // Scroll to an element, and make sure it actually happened. Some embedded browsers
+  // accept behavior:"smooth" and then never perform the scroll, which leaves a link
+  // that looks broken; if nothing has moved shortly afterwards, jump instead. The
+  // animation is the enhancement, the scroll is the requirement.
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function goTo(el) {
+    const before = window.scrollY;
+    const target = Math.round(el.getBoundingClientRect().top) + before;
+    el.scrollIntoView({behavior: reduceMotion ? "auto" : "smooth", block: "start"});
+    if (Math.abs(target - before) < 4) return;   // already there; nothing to rescue
+    setTimeout(() => {
+      if (window.scrollY === before) window.scrollTo(0, target);
+    }, 250);
+  }
+
+  for (const a of document.querySelectorAll('.findings a[href^="#"]')) {
+    const target = a.getAttribute("href").slice(1);
+    if (target.includes("/")) {
+      a.addEventListener("click", () => {
+        stopPlay();
+        // Defer past the hashchange this click is about to fire, so the scroll lands on
+        // the map the reader asked for rather than the one still on screen.
+        setTimeout(() => goTo(readoutEl), 0);
+      });
+    } else {
+      // A link to one of the comparison figures further down. Scroll to it without
+      // letting the fragment change: the URL holds the explorer's state, and a
+      // "#fig-..." in it would be read back as a broken permalink on the next load.
+      a.addEventListener("click", (e) => {
+        const el = document.getElementById(target);
+        if (!el) return;
+        e.preventDefault();
+        goTo(el);
+      });
+    }
+  }
+
+  addEventListener("hashchange", () => {
+    const before = key();
+    applyHash();
+    if (key() !== before) render();
+  });
+
+  addEventListener("keydown", (e) => {
+    const hours = hoursFor(state.day);
+    const i = hours.findIndex((p) => p.hour === state.hour);
+    if (e.key === "ArrowRight" && i < hours.length - 1) {
+      stopPlay(); state.hour = hours[i + 1].hour; render();
+    }
+    if (e.key === "ArrowLeft" && i > 0) {
+      stopPlay(); state.hour = hours[i - 1].hour; render();
+    }
+  });
+
+  applyHash();
+  render();
+})();
+</script>
+</body>
+</html>
